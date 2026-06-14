@@ -1,0 +1,46 @@
+# config/motors.yaml
+# Default parameters for the three singulation stage motors.
+# Override individual values at launch time with -p key:=value
+# or load a site-specific YAML over this one.
+#
+# Pin assignments assume the wiring described in README.md:
+#   Motor 1 → bottom rotor  (first part release)
+#   Motor 2 → middle rotor
+#   Motor 3 → top rotor     (feeds from bulk hopper)
+
+singulation:
+  stepper_motor_1:
+    ros__parameters:
+      motor_name:    "motor_1"
+      step_pin:      17
+      dir_pin:       27
+      enable_pin:    22
+      steps_per_rev: 200
+      microstepping: 1
+      speed_rpm:     10.0
+      auto_enable:   true
+      gpio_chip:     0
+
+  stepper_motor_2:
+    ros__parameters:
+      motor_name:    "motor_2"
+      step_pin:      23
+      dir_pin:       24
+      enable_pin:    25
+      steps_per_rev: 200
+      microstepping: 1
+      speed_rpm:     10.0
+      auto_enable:   true
+      gpio_chip:     0
+
+  stepper_motor_3:
+    ros__parameters:
+      motor_name:    "motor_3"
+      step_pin:      5
+      dir_pin:       6
+      enable_pin:    13
+      steps_per_rev: 200
+      microstepping: 1
+      speed_rpm:     10.0
+      auto_enable:   true
+      gpio_chip:     0

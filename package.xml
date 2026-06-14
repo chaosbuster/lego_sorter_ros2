@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>singulation_controller</name>
+  <version>0.1.0</version>
+  <description>
+    ROS 2 Jazzy node that drives NEMA17 stepper motors (via A4988/DRV8825)
+    for the three-stage singulation carousel of the Basically LEGO Sorter V2.
+    Aligns with the /singulation/part_ready contract and the seven-node
+    minimum viable pipeline described in the project architecture.
+  </description>
+
+  <maintainer email="you@example.com">ChaosBuster</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+
+  <!-- Future: uncomment when lego_sorter_msgs is built -->
+  <!-- <depend>lego_sorter_msgs</depend> -->
+
+  <build_depend>ament_python</build_depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
