@@ -32,7 +32,7 @@ from std_msgs.msg import Bool, Float64, String
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-_ENABLE_ACTIVE_LOW = True   # A4988 and DRV8825 both pull EN LOW to enable
+_ENABLE_ACTIVE_LOW = False  # TB6600: HIGH = enabled, LOW = disabled
 
 
 class StepperNode(Node):
@@ -180,7 +180,7 @@ class StepperNode(Node):
     def _set_enable(self, enable: bool):
         """Drive the ENABLE pin (active-low on A4988/DRV8825)."""
         self._enabled = enable
-        pin_state = 0 if enable else 1   # LOW = enabled
+        pin_state = 1 if enable else 0   # HIGH = enabled, LOW = disabled
         lgpio.gpio_write(self._chip, self._enable_pin, pin_state)
         self.get_logger().info(
             f"[{self._motor_name}] Motor {'ENABLED' if enable else 'DISABLED'}"
