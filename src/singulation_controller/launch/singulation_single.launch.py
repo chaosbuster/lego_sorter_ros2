@@ -25,7 +25,7 @@ def generate_launch_description():
         DeclareLaunchArgument("microstepping", default_value="1"),
         DeclareLaunchArgument("speed_rpm",     default_value="10.0"),
         DeclareLaunchArgument("auto_enable",   default_value="true"),
-        DeclareLaunchArgument("gpio_chip",     default_value="0"),
+        DeclareLaunchArgument("gpio_chip",     default_value="4"),
     ]
 
     return LaunchDescription(args + [

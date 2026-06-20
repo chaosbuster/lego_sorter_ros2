@@ -19,7 +19,7 @@ singulation:
       microstepping: 1
       speed_rpm:     10.0
       auto_enable:   true
-      gpio_chip:     0
+      gpio_chip:     4
 
   stepper_motor_2:
     ros__parameters:
@@ -31,7 +31,7 @@ singulation:
       microstepping: 1
       speed_rpm:     10.0
       auto_enable:   true
-      gpio_chip:     0
+      gpio_chip:     4
 
   stepper_motor_3:
     ros__parameters:
@@ -43,4 +43,4 @@ singulation:
       microstepping: 1
       speed_rpm:     10.0
       auto_enable:   true
-      gpio_chip:     0
+      gpio_chip:     4

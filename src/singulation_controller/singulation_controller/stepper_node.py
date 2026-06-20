@@ -32,7 +32,7 @@ from std_msgs.msg import Bool, Float64, String
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-_ENABLE_ACTIVE_LOW = False  # TB6600: HIGH = enabled, LOW = disabled
+_ENABLE_ACTIVE_LOW = True   # A4988 and DRV8825 both pull EN LOW to enable
 
 
 class StepperNode(Node):
@@ -48,7 +48,10 @@ class StepperNode(Node):
         microstepping   (int)   Microstepping divisor (1/2/4/8/16/32)  [1]
         speed_rpm       (float) Initial speed in RPM                   [10.0]
         auto_enable     (bool)  Enable motor on startup                [True]
-        gpio_chip       (int)   lgpio chip index (0 on Pi 5)           [0]
+        gpio_chip       (int)   lgpio chip index — 4 on Pi 5 for the    [4]
+                                40-pin header (RP1 southbridge); chip 0
+                                is internal/PCIe and must NOT be used
+                                for header GPIO pins
 
     Subscribed Topics (namespaced by motor_name):
         /singulation/<motor_name>/set_speed     std_msgs/Float64  (RPM)
@@ -74,7 +77,7 @@ class StepperNode(Node):
         self.declare_parameter("microstepping", 1)
         self.declare_parameter("speed_rpm",     10.0)
         self.declare_parameter("auto_enable",   True)
-        self.declare_parameter("gpio_chip",     0)
+        self.declare_parameter("gpio_chip",     4)   # RP1 header chip on Pi 5
 
         self._motor_name    = self.get_parameter("motor_name").value
         self._step_pin      = self.get_parameter("step_pin").value
@@ -180,7 +183,7 @@ class StepperNode(Node):
     def _set_enable(self, enable: bool):
         """Drive the ENABLE pin (active-low on A4988/DRV8825)."""
         self._enabled = enable
-        pin_state = 1 if enable else 0   # HIGH = enabled, LOW = disabled
+        pin_state = 0 if enable else 1   # LOW = enabled
         lgpio.gpio_write(self._chip, self._enable_pin, pin_state)
         self.get_logger().info(
             f"[{self._motor_name}] Motor {'ENABLED' if enable else 'DISABLED'}"

@@ -76,7 +76,7 @@ def generate_launch_description():
                 "microstepping": microstep,
                 "speed_rpm":     speed,
                 "auto_enable":   auto_en,
-                "gpio_chip":     0,         # lgpio chip 0 on Pi 5
+                "gpio_chip":     4,         # RP1 header chip on Pi 5
             }],
             # Emit structured logs
             emulate_tty=True,
