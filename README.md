@@ -3,6 +3,7 @@
 > **Hardware:** [Basically LEGO Sorter V2](https://basically.website/sorter-v2) — three-stage
 > singulation carousel, each stage driven by a NEMA17 42-40 stepper motor via TB6600 driver.
 > **Platform:** Raspberry Pi 5, ROS 2 Jazzy, Python, `lgpio`.
+> **Status:** ✅ All three motors confirmed spinning independently and simultaneously.
 
 ---
 
@@ -78,13 +79,11 @@ singulation_controller (this package) ──────────────
 | — | Ferrule-terminated wire (motor + power side) |
 
 > ⚠️ **Never connect or disconnect the motor while the driver is powered.**
-> ⚠️ **Do not connect Pi 5V or 12V/24V to the TB6600 signal terminals — logic side is 3.3V–5V only.**
+> ⚠️ **Do not connect Pi 5V or 12V/24V to the TB6600 signal terminals — logic side is 3.3V only.**
 
 ---
 
 ### TB6600 Terminal Layout
-
-The TB6600 has two groups of screw terminals — signal on one side, power and motor on the other.
 
 ```
        TB6600
@@ -112,15 +111,18 @@ Raspberry Pi 5                    TB6600 Signal Side
                          ├──────→ DIR+
                          └──────→ ENA+
 
-GPIO 17 (Pin 11) ──────────────→ PUL-   (STEP)
-GPIO 27 (Pin 13) ──────────────→ DIR-   (DIRECTION)
-GPIO 22 (Pin 15) ──────────────→ ENA-   (ENABLE)
-
-GND   (Pin 6)    ──────────────→ (not connected on signal side)
+GPIO <step_pin>  ──────────────→ PUL-   (STEP)
+GPIO <dir_pin>   ──────────────→ DIR-   (DIRECTION)
+GPIO <enable_pin>──────────────→ ENA-   (ENABLE)
 ```
 
 > **Why common-anode?** The TB6600 uses optocouplers on its inputs. Tying the + side to 3.3V
 > and switching the - side LOW with GPIO gives clean, noise-immune signalling.
+
+> ⚠️ **Enable pin is required.** Without ENA wired, the TB6600 stays permanently energized
+> regardless of what the software does — `set_enable` calls will have no effect and the
+> motor will not be controllable in software. Wire ENA+ → 3.3V and ENA- → your enable_pin
+> on every motor.
 
 ---
 
@@ -155,84 +157,61 @@ Set multimeter to resistance (Ω). Probe pairs of wires:
 - Two wires showing ~3–5 Ω continuity → same coil
 - Two wires showing no continuity (∞) → different coils
 
-```
-Common wire colours (not universal — always verify with multimeter):
-  Coil A: Red  / Green
-  Coil B: Blue / Yellow  (or Black / White)
-```
+If the motor only oscillates between two positions instead of rotating continuously, this is
+almost always a coil-pairing mistake (wires from two different coils mixed into one driver
+terminal pair) — re-verify with the multimeter before checking anything else.
 
 If the motor runs in the wrong direction, swap A+ and A- (reverses one coil).
 
 ---
 
-### Raspberry Pi 5 GPIO Header — Pin Reference
+### ⚠️ Critical: GPIO Chip Index on Raspberry Pi 5
 
-```
-Pi 5 Header (relevant pins only)
+The Pi 5 exposes **multiple GPIO chips**, and the 40-pin header is **not** on chip 0.
 
- [Pin 1 ]  3.3V  ──→ PUL+ / DIR+ / ENA+ (all three + terminals)
- [Pin 6 ]  GND   ──→ (logic ground reference, connect if needed)
- [Pin 11]  GPIO17 ──→ PUL-  (STEP)
- [Pin 13]  GPIO27 ──→ DIR-  (DIRECTION)
- [Pin 15]  GPIO22 ──→ ENA-  (ENABLE)
+```bash
+sudo gpiodetect
 ```
 
----
+On the Pi 5, the 40-pin header GPIOs (the ones labeled GPIO2 through GPIO27 in `gpioinfo`)
+live on **gpiochip4** (the RP1 southbridge). `gpiochip0` is internal — it includes things like
+the power button and PCIe control lines, several of which are already claimed by the system.
+Using `gpio_chip:=0` will either silently target the wrong physical pin or fail with a
+`GPIO busy` error if it happens to collide with a system-reserved line.
 
-### TB6600 DIP Switch Settings
+**This package defaults `gpio_chip` to `4`.** Don't override it back to `0` unless you've
+confirmed your specific Pi/OS image maps the header differently — verify first with:
 
-The TB6600 has 6 DIP switches on the side — SW1–SW3 set current, SW4–SW6 set microstepping.
+```bash
+sudo gpioinfo | less
+# Search for "GPIO14", "GPIO15", etc. — confirm which gpiochipN they appear under
+```
 
-#### Current Limit (SW1–SW3)
+Also be aware some header pins are reserved by the kernel for other peripherals even though
+they're physically on the header:
 
-The NEMA17 42-40 is typically rated 1.5–1.7 A/phase. Start at 1.5A.
+| BCM GPIO | Reserved By | Avoid For Stepper Use |
+|----------|-------------|------------------------|
+| 2, 3 | I2C | Yes |
+| 7, 8 | SPI0 CS1 / CS0 | Yes |
+| 9, 10, 11 | SPI0 MISO/MOSI/SCLK | Yes |
+| 14, 15 | UART (if enabled) | Only if serial console is active |
 
-| SW1 | SW2 | SW3 | Peak Current |
-|-----|-----|-----|-------------|
-| ON  | ON  | ON  | 0.5A |
-| ON  | ON  | OFF | 1.0A |
-| ON  | OFF | ON  | 1.5A ← **recommended start** |
-| ON  | OFF | OFF | 2.0A |
-| OFF | ON  | ON  | 2.5A |
-| OFF | ON  | OFF | 2.8A (max for NEMA17) |
-
-#### Microstepping (SW4–SW6)
-
-| SW4 | SW5 | SW6 | Microstep |
-|-----|-----|-----|-----------|
-| ON  | ON  | ON  | Full step (1) ← **start here** |
-| ON  | ON  | OFF | Half step (2) |
-| ON  | OFF | ON  | 4 |
-| ON  | OFF | OFF | 8 ← good balance of smoothness/speed |
-| OFF | ON  | ON  | 16 |
-| OFF | ON  | OFF | 32 |
-
-Start with full step for initial wiring verification. Once the motor spins correctly, switch to 8 or 16 for smoother operation and update the `microstepping` ROS parameter to match.
+Run `sudo gpioinfo` and confirm a candidate pin shows `unused` before wiring to it — pins
+marked `[used]` are claimed by the kernel and will throw `GPIO busy` errors.
 
 ---
 
-### Enable Pin Logic (TB6600 vs A4988)
+### Confirmed Pin Assignments — This Build
 
-> **Important:** The TB6600 enable pin logic is the **opposite** of the A4988/DRV8825.
+These are the wiring and `gpio_chip` settings verified working on this project's hardware.
+Edit `config/motors.yaml` or override at launch if your own wiring differs.
 
-| Driver | ENA HIGH | ENA LOW |
-|--------|----------|---------|
-| A4988 / DRV8825 | Disabled | **Enabled** |
-| **TB6600** | **Enabled** | Disabled |
-
-The `stepper_node.py` is already configured correctly for the TB6600 (`_ENABLE_ACTIVE_LOW = False`).
-
----
-
-### Pin Assignments for All Three Motors
-
-Edit `config/motors.yaml` or override at launch if your wiring differs.
-
-| Motor | Role | PUL- (STEP) BCM | DIR- (DIR) BCM | ENA- (EN) BCM |
-|-------|------|----------------|---------------|--------------|
-| motor_1 | Bottom rotor | **17** (Pin 11) | **27** (Pin 13) | **22** (Pin 15) |
-| motor_2 | Middle rotor | **23** (Pin 16) | **24** (Pin 18) | **25** (Pin 22) |
-| motor_3 | Top rotor    | **5**  (Pin 29) | **6**  (Pin 31) | **13** (Pin 33) |
+| Motor | Role | STEP (BCM) | DIR (BCM) | ENABLE (BCM) | GPIO Chip |
+|-------|------|-----------|-----------|---------------|-----------|
+| motor_1 | Bottom rotor | **14** | **15** | **18** | **4** |
+| motor_2 | Middle rotor | **23** | **24** | **25** | **4** |
+| motor_3 | Top rotor    | **12** | **16** | **20** | **4** |
 
 ---
 
@@ -265,6 +244,15 @@ echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
 
+To sanity-check the install:
+```bash
+sudo apt install -y ros-jazzy-demo-nodes-py ros-jazzy-demo-nodes-cpp
+# terminal 1:
+ros2 run demo_nodes_py talker
+# terminal 2:
+ros2 run demo_nodes_py listener
+```
+
 ### 3. System dependencies
 
 ```bash
@@ -276,10 +264,33 @@ sudo apt install -y \
     ros-jazzy-rosidl-default-runtime
 ```
 
-> **Note:** On Ubuntu 24.04 the package is `python3-lgpio` — not `lgpio`.
-> The `gpio` group does not exist by default on Ubuntu; create it if needed or run nodes with `sudo`.
+> **Note:** On Ubuntu 24.04 the correct apt package is `python3-lgpio` — the bare `lgpio`
+> package does not exist in the repos.
 
-### 4. Clone and build
+### 4. GPIO group (optional — lets you skip `sudo`)
+
+Ubuntu does not create a `gpio` group by default the way Raspberry Pi OS does.
+
+```bash
+sudo groupadd gpio
+sudo usermod -aG gpio $USER
+echo 'SUBSYSTEM=="gpio", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-gpio.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+sudo reboot
+```
+
+After reboot, confirm:
+```bash
+groups $USER
+# should list "gpio"
+```
+
+> **Important:** If you run nodes with `sudo` instead of setting up this group, remember that
+> `sudo` does **not** inherit your shell's sourced ROS environment or `PATH`. Either set up the
+> group (recommended) or use `sudo -E env "PATH=$PATH" ros2 ...` for every command.
+
+### 5. Clone and build
 
 ```bash
 mkdir -p ~/ros_sorter/src
@@ -297,15 +308,20 @@ source install/setup.bash
 echo "source ~/ros_sorter/install/setup.bash" >> ~/.bashrc
 ```
 
-> **Tip:** If colcon picks up a virtualenv Python instead of the system Python, prefix every
-> `colcon build` with `COLCON_PYTHON_EXECUTABLE=/usr/bin/python3` or add
-> `export COLCON_PYTHON_EXECUTABLE=/usr/bin/python3` to `~/.bashrc`.
+> **Tip:** If colcon picks up a virtualenv Python instead of the system Python (look for a
+> `.venv` path in any error mentioning `ModuleNotFoundError: No module named 'em'` or
+> `'ament_package'`), force the system interpreter:
+> ```bash
+> rm -rf build/ install/ log/
+> COLCON_PYTHON_EXECUTABLE=/usr/bin/python3 colcon build --packages-select lego_sorter_msgs
+> ```
+> Make it permanent with `echo "export COLCON_PYTHON_EXECUTABLE=/usr/bin/python3" >> ~/.bashrc`.
 
-### 5. Verify install
+### 6. Verify install
 
 ```bash
 ros2 pkg list | grep -E "lego_sorter|singulation"
-# Expected output:
+# Expected:
 # lego_sorter_msgs
 # singulation_controller
 ```
@@ -314,25 +330,53 @@ ros2 pkg list | grep -E "lego_sorter|singulation"
 
 ## Running the Nodes
 
-### Single motor test (first bring-up)
+ROS 2 launch commands run in the foreground and block the terminal. Use **two terminals**:
+one to launch, one to send commands and inspect state.
 
-Wire Motor 1 only, then:
+### Terminal 1 — Single motor test (first bring-up)
+
+Wire one motor, then:
 
 ```bash
-sudo ros2 launch singulation_controller singulation_single.launch.py \
+source /opt/ros/jazzy/setup.bash
+source ~/ros_sorter/install/setup.bash
+
+ros2 launch singulation_controller singulation_single.launch.py \
     motor_name:=motor_1 \
-    step_pin:=17 \
-    dir_pin:=27 \
-    enable_pin:=22 \
-    speed_rpm:=5.0
+    step_pin:=14 \
+    dir_pin:=15 \
+    enable_pin:=18 \
+    speed_rpm:=5.0 \
+    gpio_chip:=4
 ```
 
-You should hear the motor stepping. If not, re-check wiring and DIP switches.
+You should hear the motor stepping continuously. If it only oscillates between two positions,
+recheck coil pairing with a multimeter — that symptom is almost never a software issue.
 
-### All three motors
+### Terminal 1 — All three motors
 
 ```bash
-sudo ros2 launch singulation_controller singulation_all.launch.py speed_rpm:=10.0
+ros2 launch singulation_controller singulation_all.launch.py speed_rpm:=25.0
+```
+
+Pin assignments for all three motors are baked into `singulation_all.launch.py` — see the
+Confirmed Pin Assignments table above. Edit that file if your wiring differs.
+
+Leave this running. Press `Ctrl+C` to shut down — each motor's enable pin should drop and
+you'll see `Shutting down — disabling motor` for each.
+
+### Terminal 2 — Inspect and control while running
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ros_sorter/install/setup.bash
+
+ros2 node list
+# /singulation/stepper_motor_1
+# /singulation/stepper_motor_2
+# /singulation/stepper_motor_3
+
+ros2 topic list | grep singulation
 ```
 
 ---
@@ -344,7 +388,6 @@ All topics are namespaced per motor: `/singulation/motor_N/...`
 ### Change speed (RPM) at runtime
 
 ```bash
-# Set motor_1 to 20 RPM
 ros2 topic pub --once /singulation/motor_1/set_speed std_msgs/msg/Float64 "data: 20.0"
 
 # Stop motor_2 (0 RPM — motor stays enabled/holding torque)
@@ -371,10 +414,7 @@ ros2 topic pub --once /singulation/motor_1/set_direction std_msgs/msg/Bool "data
 ### Monitor status
 
 ```bash
-# Live status JSON at 1 Hz
 ros2 topic echo /singulation/motor_1/status
-
-# Watch for part-ready events
 ros2 topic echo /singulation/part_ready
 ```
 
@@ -394,7 +434,7 @@ All parameters settable at launch via `-p key:=value` or in a YAML override file
 | `microstepping` | int | `1` | Must match TB6600 SW4–SW6 DIP setting |
 | `speed_rpm` | float | `10.0` | Initial speed in RPM |
 | `auto_enable` | bool | `true` | Energise motor on node startup |
-| `gpio_chip` | int | `0` | lgpio chip index (always 0 on Pi 5) |
+| `gpio_chip` | int | `4` | lgpio chip index — **4** for the Pi 5 header (RP1), not 0 |
 
 ---
 
@@ -446,11 +486,25 @@ git push
 
 ## Troubleshooting
 
+**`GPIO busy` error on launch**
+- You're very likely targeting `gpio_chip:=0` instead of `4`, or the specific pin is reserved
+  by the kernel (SPI/I2C/UART). Run `sudo gpioinfo` and confirm the pin shows `unused` on
+  `gpiochip4` before using it.
+
 **Motor doesn't move or make sound**
 - Verify PSU voltage reaches TB6600 VCC terminal (measure with multimeter)
 - Confirm DIP switches match intended current and microstepping settings
-- Check PUL- is connected to GPIO 17 (not PUL+)
+- Check PUL- is connected to the correct GPIO (not PUL+)
 - Try `speed_rpm:=2.0` — at very low RPM you can feel each individual step
+
+**Motor toggles between two positions instead of rotating**
+- This is a coil-pairing problem, not software. Disconnect the motor and re-verify with a
+  multimeter which wire pairs belong to which coil (~3–5 Ω = same coil, ∞ = different coils).
+  A wire from one coil mixed into the other coil's terminal pair causes exactly this symptom.
+
+**Motor stays energized no matter what software does**
+- The ENABLE pin is likely not wired. Confirm ENA+ → 3.3V and ENA- → your `enable_pin` GPIO.
+  Without it, the TB6600 defaults to always-enabled and `set_enable` calls have no effect.
 
 **`lgpio` permission denied**
 ```bash
@@ -458,14 +512,17 @@ sudo groupadd gpio
 sudo usermod -aG gpio $USER
 echo 'SUBSYSTEM=="gpio", GROUP="gpio", MODE="0660"' | sudo tee /etc/udev/rules.d/99-gpio.rules
 sudo udevadm control --reload-rules && sudo udevadm trigger
-# Or simply run with: sudo ros2 launch ...
+# Or simply run with: sudo -E env "PATH=$PATH" ros2 launch ...
 ```
+
+**`sudo: ros2: command not found`**
+- `sudo` doesn't inherit your shell's `PATH`. Either avoid `sudo` by setting up the `gpio`
+  group above, or run `sudo -E env "PATH=$PATH" ros2 ...`.
 
 **`colcon build` picks up wrong Python / virtualenv**
 ```bash
-# Deactivate any venv, then:
+rm -rf build/ install/ log/
 COLCON_PYTHON_EXECUTABLE=/usr/bin/python3 colcon build --packages-select lego_sorter_msgs
-# Make permanent:
 echo "export COLCON_PYTHON_EXECUTABLE=/usr/bin/python3" >> ~/.bashrc
 ```
 
@@ -477,14 +534,21 @@ rm -rf ~/ros_sorter/build ~/ros_sorter/install
 COLCON_PYTHON_EXECUTABLE=/usr/bin/python3 colcon build --packages-select lego_sorter_msgs
 ```
 
+**Launch file fails with `IndentationError` / `InvalidFrontendLaunchFileError`**
+- A manual edit (often via `nano`) introduced mixed tabs/spaces or a stray indent. Validate
+  before relaunching:
+  ```bash
+  python3 -m py_compile path/to/file.launch.py && echo "Syntax OK"
+  ```
+
 **Motor runs backwards**
 - Swap A+ and A- at the TB6600 motor terminals, or
 - Send `ros2 topic pub --once /singulation/motor_1/set_direction std_msgs/msg/Bool "data: false"`
 
 **Motor stalls or misses steps**
 - Lower `speed_rpm` — NEMA17 torque drops sharply above ~300 RPM at full step
-- Increase current limit one step on SW1–SW3 (check motor temperature after 5 min)
-- Increase microstepping for smoother motion; update `microstepping` parameter to match
+- Increase current limit one step on the TB6600 DIP switches (check motor temperature after 5 min)
+- Increase microstepping for smoother motion; update the `microstepping` parameter to match
 
 ---
 
