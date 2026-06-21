@@ -87,9 +87,9 @@ def generate_launch_description():
     # Adjust pin numbers here if your wiring differs
     # ------------------------------------------------------------------
     motor_nodes = [
-        stepper_node("motor_1", step_pin=17, dir_pin=27, enable_pin=22),
+        stepper_node("motor_1", step_pin=14, dir_pin=15, enable_pin=18),
         stepper_node("motor_2", step_pin=23, dir_pin=24, enable_pin=25),
-        stepper_node("motor_3", step_pin=5,  dir_pin=6,  enable_pin=13),
+        stepper_node("motor_3", step_pin=12, dir_pin=16, enable_pin=20),
     ]
 
     return LaunchDescription(args + motor_nodes)

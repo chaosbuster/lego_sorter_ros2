@@ -1,0 +1,7 @@
+ros2 launch singulation_controller singulation_single.launch.py motor_name:=motor_1 step_pin:=14 dir_pin:=15 enable_pin:=18 speed_rpm:=25.0
+
+ros2 launch singulation_controller singulation_single.launch.py motor_name:=motor_2 step_pin:=23 dir_pin:=24 enable_pin:=25 speed_rpm:=25.0
+
+ros2 launch singulation_controller singulation_single.launch.py motor_name:=motor_3 step_pin:=12 dir_pin:=16 enable_pin:=20 speed_rpm:=25.0
+
+
